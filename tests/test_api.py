@@ -274,7 +274,7 @@ def test_seed_demo_and_frontend_serving() -> None:
             seed_res = client.post("/seed-demo")
             assert seed_res.status_code == 200
             stats = client.get("/stats").json()
-            assert stats["conditions"] == 5
+            assert stats["conditions"] >= 5
             assert stats["symptoms"] >= 10
             assert stats["risk_factors"] >= 5
 

@@ -365,6 +365,78 @@ def seed_initial_clinical_data(db: Session, force: bool = False) -> int:
                 ("ICU Admission", 2, "Continuous hemodynamic monitoring"),
             ],
         },
+        {
+            "name": "Common Cold (Viral Upper Respiratory Infection)",
+            "description": "Acute, self-limiting viral infection of the upper respiratory tract presenting with cough, headache, sore throat, and mild fatigue.",
+            "severity": 2,
+            "urgency": 1,
+            "prior_probability": 0.25,
+            "symptoms": [
+                ("Cough", 0.85, 0.80),
+                ("Sore throat", 0.80, 0.75),
+                ("Headache", 0.65, 0.60),
+                ("Fatigue", 0.60, 0.55),
+                ("Fever", 0.25, 0.20),
+                ("Muscle aches", 0.35, 0.30),
+            ],
+            "risks": [
+                ("Immunocompromised", 0.40),
+                ("Age > 65", 0.30),
+                ("Smoking", 0.35),
+            ],
+            "tests": [
+                ("Rapid Influenza PCR", 2, "Rule out influenza if systemic symptoms worsen", 0.05, 0.98),
+                ("Pulse Oximetry", 3, "Screen for lower airway involvement if dyspnea develops", 0.98, 0.95),
+            ],
+            "treatments": [
+                ("Supportive Hydration & Rest", 1, "Rest, oral hydration, saline gargles, and OTC analgesics"),
+            ],
+        },
+        {
+            "name": "Acute Viral Pharyngitis",
+            "description": "Inflammatory condition of the pharynx and tonsils primarily caused by viral pathogens, causing predominant sore throat, headache, and fever.",
+            "severity": 3,
+            "urgency": 2,
+            "prior_probability": 0.15,
+            "symptoms": [
+                ("Sore throat", 0.95, 0.90),
+                ("Headache", 0.70, 0.65),
+                ("Fever", 0.60, 0.55),
+                ("Fatigue", 0.55, 0.50),
+                ("Cough", 0.40, 0.35),
+            ],
+            "risks": [
+                ("Smoking", 0.40),
+                ("Immunocompromised", 0.50),
+            ],
+            "tests": [
+                ("Complete Blood Count (CBC)", 2, "Exclude atypical bacterial pharyngitis if severe", 0.40, 0.75),
+            ],
+            "treatments": [
+                ("Supportive Hydration & Rest", 1, "Warm fluids, throat lozenges, and acetaminophen/ibuprofen"),
+            ],
+        },
+        {
+            "name": "Tension-Type Headache",
+            "description": "Common primary headache disorder characterized by bilateral, non-pulsatile cranial discomfort often triggered by stress or fatigue.",
+            "severity": 2,
+            "urgency": 1,
+            "prior_probability": 0.20,
+            "symptoms": [
+                ("Headache", 0.98, 0.95),
+                ("Fatigue", 0.60, 0.55),
+                ("Dizziness", 0.25, 0.20),
+            ],
+            "risks": [
+                ("Smoking", 0.30),
+            ],
+            "tests": [
+                ("Blood Pressure Monitoring", 1, "Rule out secondary hypertensive etiology", 0.95, 0.90),
+            ],
+            "treatments": [
+                ("Supportive Hydration & Rest", 1, "Hydration, stress reduction, and simple analgesics"),
+            ],
+        },
     ]
 
     count = 0
