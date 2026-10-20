@@ -131,8 +131,12 @@ def rank_conditions(
             rel for rel in cond.risk_factors if rel.risk_factor and _normalize_name(rel.risk_factor.name) in normalized_risk_factors
         ]
 
-        # Only retain candidates that have positive evidence, high harm potential, or substantial posterior (> 1%)
-        if not matched_symptoms_rels and b_res.posterior_probability < 0.01 and not b_res.is_high_severity_risk:
+        # Only retain candidates that have actual matched evidence (symptoms or risk factors)
+        # and are clinically useful/probable (posterior >= 5% or high-severity safety risk).
+        # Unrelated or unlikely conditions are not tacked on.
+        has_positive_evidence = bool(matched_symptoms_rels or matched_risk_rels)
+        is_probable_candidate = b_res.posterior_probability >= 0.05 or b_res.is_high_severity_risk
+        if not (has_positive_evidence and is_probable_candidate):
             continue
 
         sym_score = len(matched_symptoms_rels) / max(len(cond.symptoms), 1)
