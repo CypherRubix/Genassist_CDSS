@@ -138,7 +138,13 @@ def select_and_rank_tests(
                     p_pos_given_cond.append(0.80)
                     discriminates.append(f"{cond.name} (Indicated)")
                 else:
-                    spec = 0.90
+                    # Test specificity against alternative conditions: use recorded specificity if available, else 0.90 default
+                    spec_candidates = [
+                        float(r.specificity) / 100.0 if float(r.specificity) > 1.0 else float(r.specificity)
+                        for _, r in relations
+                        if r.specificity is not None
+                    ]
+                    spec = max(spec_candidates) if spec_candidates else 0.90
                     fpr = 1.0 - spec
                     p_pos_given_cond.append(fpr)
 

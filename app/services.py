@@ -181,6 +181,7 @@ def seed_initial_clinical_data(db: Session, force: bool = False) -> int:
         ("Dizziness", "Lightheadedness, unsteadiness, or presyncopal sensation"),
         ("Muscle aches", "Diffuse myalgia or body soreness"),
         ("Chest tightness", "Constrictive pressure in the thorax without sharp pleuritic quality"),
+        ("Night Sweats", "Episodes of excessive sweating during sleep associated with systemic or respiratory infection"),
     ]
     symptom_map: dict[str, Symptom] = {}
     for name, desc in symptom_defs:
@@ -332,6 +333,7 @@ def seed_initial_clinical_data(db: Session, force: bool = False) -> int:
                 ("Sputum production", 0.75, 0.70),
                 ("Fatigue", 0.50, 0.55),
                 ("Sore throat", 0.45, 0.40),
+                ("Night Sweats", 0.75, 0.50),
             ],
             "risks": [("Smoking", 0.65), ("Chronic lung disease", 0.50)],
             "tests": [
@@ -443,6 +445,38 @@ def seed_initial_clinical_data(db: Session, force: bool = False) -> int:
             # Update prior_probability if not yet populated
             if cond.prior_probability is None and cfg.get("prior_probability"):
                 cond.prior_probability = cfg["prior_probability"]
+
+            # Safely sync/populate missing sensitivity & specificity on existing relations
+            for sym_entry in cfg["symptoms"]:
+                s_name = sym_entry[0]
+                sens = sym_entry[2] if len(sym_entry) > 2 else None
+                if sens is not None:
+                    sym_obj = symptom_map.get(s_name.casefold())
+                    if sym_obj:
+                        cs = db.scalar(
+                            select(ConditionSymptom).filter_by(
+                                condition_id=cond.condition_id, symptom_id=sym_obj.symptom_id
+                            )
+                        )
+                        if cs and cs.sensitivity is None:
+                            cs.sensitivity = sens
+
+            for t_entry in cfg["tests"]:
+                t_name = t_entry[0]
+                sens = t_entry[3] if len(t_entry) > 3 else None
+                spec = t_entry[4] if len(t_entry) > 4 else None
+                tst_obj = test_map.get(t_name.casefold())
+                if tst_obj:
+                    ct = db.scalar(
+                        select(ConditionTest).filter_by(
+                            condition_id=cond.condition_id, test_id=tst_obj.test_id
+                        )
+                    )
+                    if ct:
+                        if sens is not None and ct.sensitivity is None:
+                            ct.sensitivity = sens
+                        if spec is not None and ct.specificity is None:
+                            ct.specificity = spec
 
     db.commit()
     return count

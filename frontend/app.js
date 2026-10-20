@@ -437,6 +437,19 @@ function resultsPage() {
   const entropy = state.results.diagnostic_entropy;
   const history = state.testHistory || [];
 
+  // Significance filtering: do not present conditions below threshold or without matched evidence
+  const MIN_CONDITION_PROB_THRESHOLD = 0.05;
+  const meaningfulConditions = rows.filter(item => {
+    const p = item.posterior_probability != null ? item.posterior_probability : item.likelihood_score;
+    const hasMatchedFindings = (item.matched_symptoms && item.matched_symptoms.length > 0) || (item.matched_risk_factors && item.matched_risk_factors.length > 0);
+    return hasMatchedFindings && p >= MIN_CONDITION_PROB_THRESHOLD;
+  });
+
+  // Test recommendation filtering: require meaningful candidate conditions and positive discriminatory utility
+  const meaningfulTests = (meaningfulConditions.length > 0)
+    ? diffTests.filter(t => (t.information_gain != null && t.information_gain >= 0.01) || (t.composite_utility_score != null && t.composite_utility_score >= 0.10))
+    : [];
+
   return `
     ${pageHead('Results', 'Bayesian Diagnostic Assessment', 'Posterior condition probabilities and intelligent test recommendations based on expected information gain.', '<button class="pill" data-page="evaluate">New evaluation</button>')}
     
@@ -464,16 +477,16 @@ function resultsPage() {
       </section>
     ` : ''}
 
-    ${diffTests.length ? `
-      <section class="panel" style="margin-bottom:24px;">
-        <div class="section-head">
-          <div>
-            <h2>Intelligent Diagnostic Test Recommendations</h2>
-            <p>Ranked by Expected Information Gain (uncertainty reduction) across competing candidate conditions.</p>
-          </div>
+    <section class="panel" style="margin-bottom:24px;">
+      <div class="section-head">
+        <div>
+          <h2>Intelligent Diagnostic Test Recommendations</h2>
+          <p>Ranked by Expected Information Gain (uncertainty reduction) across competing candidate conditions.</p>
         </div>
+      </div>
+      ${meaningfulTests.length ? `
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;margin-top:14px;">
-          ${diffTests.map(t => `
+          ${meaningfulTests.map(t => `
             <div style="padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                 <strong style="font-size:14px;">${escapeHtml(t.name)}</strong>
@@ -496,11 +509,17 @@ function resultsPage() {
             </div>
           `).join('')}
         </div>
-      </section>
-    ` : ''}
+      ` : `
+        <div class="panel empty" style="margin-top:14px;background:var(--surface);border:1px dashed var(--line);padding:18px;text-align:center;color:var(--muted);">
+          Insufficient data to recommend a suitable diagnostic test from the available information.
+        </div>
+      `}
+    </section>
 
     <div class="results-list">
-      ${rows.length ? rows.map((item, index) => resultCard(item, index)).join('') : '<div class="panel empty">No candidate conditions matched the submitted findings.</div>'}
+      ${meaningfulConditions.length
+        ? meaningfulConditions.map((item, index) => resultCard(item, index)).join('')
+        : '<div class="panel empty" style="padding:24px;text-align:center;font-size:15px;color:var(--muted);">Insufficient data to determine a reliable condition ranking.</div>'}
     </div>
   `;
 }
