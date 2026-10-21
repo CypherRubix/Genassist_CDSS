@@ -484,6 +484,12 @@ function resultsPage() {
       </section>
     ` : ''}
 
+    <div class="results-list">
+      ${meaningfulConditions.length
+        ? meaningfulConditions.map((item, index) => resultCard(item, index)).join('')
+        : '<div class="panel empty" style="padding:24px;text-align:center;font-size:15px;color:var(--muted);">Insufficient data to determine a reliable condition ranking.</div>'}
+    </div>
+
     <section class="panel" style="margin-bottom:24px;">
       <div class="section-head">
         <div>
@@ -522,12 +528,6 @@ function resultsPage() {
         </div>
       `}
     </section>
-
-    <div class="results-list">
-      ${meaningfulConditions.length
-        ? meaningfulConditions.map((item, index) => resultCard(item, index)).join('')
-        : '<div class="panel empty" style="padding:24px;text-align:center;font-size:15px;color:var(--muted);">Insufficient data to determine a reliable condition ranking.</div>'}
-    </div>
   `;
 }
 
