@@ -212,6 +212,23 @@ def test_stats_and_details_endpoints() -> None:
             assert details["tests"][0]["name"] == "X-Ray"
             assert details["treatments"][0]["name"] == "Inhaler"
 
+            symptom_details = client.get(f"/knowledge/symptoms/{s_res.json()['id']}/details").json()
+            assert symptom_details["description"] == "Productive"
+            assert symptom_details["related_conditions"] == [
+                {"condition_id": cid, "condition_name": "Bronchitis", "weight": 0.85}
+            ]
+
+            risk_details = client.get(f"/knowledge/risk-factors/{r_res.json()['id']}/details").json()
+            assert risk_details["related_conditions"][0]["weight"] == 0.65
+            test_details = client.get(f"/knowledge/tests/{t_res.json()['id']}/details").json()
+            assert test_details["purpose"] == "Check lungs"
+            assert test_details["related_conditions"][0]["priority"] == 1
+            assert test_details["related_conditions"][0]["purpose"] == "Inspect airway"
+            treatment_details = client.get(f"/knowledge/treatments/{tx_res.json()['id']}/details").json()
+            assert treatment_details["type"] == "medication"
+            assert treatment_details["related_conditions"][0]["priority"] == 1
+            assert treatment_details["related_conditions"][0]["notes"] == "Use PRN"
+
             # Verify stats incremented
             stats_after = client.get("/stats").json()
             assert stats_after["conditions"] == 1
@@ -323,4 +340,3 @@ def test_bayesian_and_differential_tests_api() -> None:
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)
-

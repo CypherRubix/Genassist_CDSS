@@ -15,6 +15,9 @@ const relationshipConfig = {
   treatments: { id: 'treatment_id', endpoint: 'treatments', label: 'Treatments', relation: 'treatments', kind: 'priority' },
 };
 
+const KB_MIN_RELATION_WEIGHT = 0.3;
+const KB_MAX_RELATION_PRIORITY = 3;
+
 const state = {
   page: 'home',
   stats: null,
@@ -32,6 +35,11 @@ const state = {
   addLoading: false,
   addError: '',
   kbQuery: '',
+  kbSelectedRecord: null,
+  kbDetail: null,
+  kbDetailLoading: false,
+  kbDetailError: '',
+  kbDetailRequestId: 0,
   symptomsQuery: '',
   risksQuery: '',
   negativeSymptomsQuery: '',
@@ -818,6 +826,103 @@ function resultCard(item, index) {
   `;
 }
 
+function relationshipItemsMarkup(items, valueKey, valueLabel) {
+  if (!items.length) {
+    return '<p class="kb-no-relations">No significant linked records found.</p>';
+  }
+  return `
+    <ul class="kb-relation-list">
+      ${items.map((item) => `
+        <li>
+          <span>${escapeHtml(item.name || item.condition_name)}</span>
+          <span class="kb-relation-value">${valueLabel} ${escapeHtml(item[valueKey])}</span>
+          ${item.purpose ? `<small>${escapeHtml(item.purpose)}</small>` : ''}
+          ${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ''}
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+function knowledgeDetailMarkup(type, detail) {
+  const description = detail.description || 'No description provided.';
+  if (type !== 'conditions') {
+    const isPriority = type === 'tests' || type === 'treatments';
+    const related = (detail.related_conditions || [])
+      .filter((item) => isPriority
+        ? item.priority <= KB_MAX_RELATION_PRIORITY
+        : item.weight >= KB_MIN_RELATION_WEIGHT)
+      .sort((a, b) => isPriority
+        ? a.priority - b.priority || a.condition_name.localeCompare(b.condition_name)
+        : b.weight - a.weight || a.condition_name.localeCompare(b.condition_name));
+    const attributes = [
+      detail.type ? `<span class="kb-detail-attribute"><strong>Type</strong> ${escapeHtml(detail.type)}</span>` : '',
+      detail.purpose ? `<span class="kb-detail-attribute"><strong>Purpose</strong> ${escapeHtml(detail.purpose)}</span>` : '',
+    ].filter(Boolean).join('');
+    return `
+      <section class="panel kb-detail">
+        <div class="section-head">
+          <div>
+            <h2>${escapeHtml(detail.name)}</h2>
+            <p>${escapeHtml(description)}</p>
+          </div>
+          <button class="pill outline small" type="button" data-kb-close>Close</button>
+        </div>
+        ${attributes ? `<div class="kb-detail-attributes">${attributes}</div>` : ''}
+        <h3>Related conditions</h3>
+        <p class="kb-relation-guidance">${isPriority
+          ? `Showing priority 1–${KB_MAX_RELATION_PRIORITY} (lower numbers indicate higher priority), ordered from highest priority.`
+          : `Showing relationship weights of ${KB_MIN_RELATION_WEIGHT} or more, ordered from strongest to weakest.`}</p>
+        ${relationshipItemsMarkup(related, isPriority ? 'priority' : 'weight', isPriority ? 'Priority' : 'Weight')}
+      </section>
+    `;
+  }
+
+  const sections = [
+    { label: 'Symptoms', items: (detail.symptoms || []).filter((item) => item.weight >= KB_MIN_RELATION_WEIGHT).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)), key: 'weight', valueLabel: 'Weight' },
+    { label: 'Risk factors', items: (detail.risk_factors || []).filter((item) => item.weight >= KB_MIN_RELATION_WEIGHT).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)), key: 'weight', valueLabel: 'Weight' },
+    { label: 'Tests', items: (detail.tests || []).filter((item) => item.priority <= KB_MAX_RELATION_PRIORITY).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)), key: 'priority', valueLabel: 'Priority' },
+    { label: 'Treatments', items: (detail.treatments || []).filter((item) => item.priority <= KB_MAX_RELATION_PRIORITY).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)), key: 'priority', valueLabel: 'Priority' },
+  ];
+  return `
+    <section class="panel kb-detail">
+      <div class="section-head">
+        <div>
+          <h2>${escapeHtml(detail.name)}</h2>
+          <p>${escapeHtml(description)}</p>
+        </div>
+        <button class="pill outline small" type="button" data-kb-close>Close</button>
+      </div>
+      <div class="kb-detail-attributes">
+        <span class="kb-detail-attribute"><strong>Severity</strong> ${detail.severity ?? '—'} / 10</span>
+        <span class="kb-detail-attribute"><strong>Urgency</strong> ${detail.urgency ?? '—'} / 10</span>
+      </div>
+      <div class="kb-relations-grid">
+        ${sections.map((section) => `
+          <section class="kb-relation-group">
+            <h3>${section.label}</h3>
+            <p class="kb-relation-guidance">${section.key === 'weight'
+              ? `Weights ${KB_MIN_RELATION_WEIGHT} or more, strongest first.`
+              : `Priorities 1–${KB_MAX_RELATION_PRIORITY}, highest priority first.`}</p>
+            ${relationshipItemsMarkup(section.items, section.key, section.valueLabel)}
+          </section>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function knowledgeDetailPanel(type) {
+  if (!state.kbSelectedRecord || state.kbSelectedRecord.type !== type) return '';
+  if (state.kbDetailLoading) {
+    return '<section class="panel kb-detail"><div class="section-head"><div class="loading">Loading record details...</div><button class="pill outline small" type="button" data-kb-close>Close</button></div></section>';
+  }
+  if (state.kbDetailError) {
+    return `<section class="panel kb-detail"><div class="section-head"><div class="error">${escapeHtml(state.kbDetailError)}</div><button class="pill outline small" type="button" data-kb-close>Close</button></div></section>`;
+  }
+  return state.kbDetail ? knowledgeDetailMarkup(type, state.kbDetail) : '';
+}
+
 function knowledgePage(type = 'conditions') {
   const config = resourceConfig[type] || resourceConfig.conditions;
   const records = state.data[type] || [];
@@ -851,7 +956,7 @@ function knowledgePage(type = 'conditions') {
           <tbody>
             ${records.map((item) => `
               <tr data-kb-row data-search-name="${escapeHtml(item.name.toLowerCase())}" style="${item.name.toLowerCase().includes(query.toLowerCase()) ? '' : 'display:none;'}">
-                <td><strong>${escapeHtml(item.name)}</strong></td>
+                <td><button class="kb-record-button" type="button" data-kb-select data-kb-type="${escapeHtml(type)}" data-kb-id="${escapeHtml(item.id)}" aria-expanded="${state.kbSelectedRecord?.type === type && state.kbSelectedRecord.id === item.id ? 'true' : 'false'}">${escapeHtml(item.name)}</button></td>
                 <td>${escapeHtml(item.description || 'No description provided')}</td>
                 <td>
                   ${type === 'conditions'
@@ -867,7 +972,34 @@ function knowledgePage(type = 'conditions') {
         ${records.length ? 'No matching records found.' : 'No records found in this category.'}
       </div>
     </section>
+    ${knowledgeDetailPanel(type)}
   `;
+}
+
+async function selectKnowledgeRecord(type, id) {
+  const requestId = state.kbDetailRequestId + 1;
+  state.kbDetailRequestId = requestId;
+  state.kbSelectedRecord = { type, id };
+  state.kbDetail = null;
+  state.kbDetailError = '';
+  state.kbDetailLoading = true;
+  render();
+
+  try {
+    const detail = type === 'conditions'
+      ? await api(`/conditions/${id}/details`)
+      : await api(`/knowledge/${type}/${id}/details`);
+    if (state.kbDetailRequestId !== requestId) return;
+    state.kbDetail = detail;
+  } catch (error) {
+    if (state.kbDetailRequestId !== requestId) return;
+    state.kbDetailError = error.message;
+  } finally {
+    if (state.kbDetailRequestId === requestId) {
+      state.kbDetailLoading = false;
+      render();
+    }
+  }
 }
 
 function toast(message) {
@@ -922,6 +1054,13 @@ function bindEvents() {
       }
 
       state.page = page;
+      if (page.startsWith('knowledge:')) {
+        state.kbSelectedRecord = null;
+        state.kbDetail = null;
+        state.kbDetailError = '';
+        state.kbDetailLoading = false;
+        state.kbDetailRequestId += 1;
+      }
       if (page === 'overview') {
         loadStats();
       }
@@ -948,6 +1087,18 @@ function bindEvents() {
 
   document.querySelector('#evaluation-form')?.addEventListener('submit', submitEvaluation);
   document.querySelector('#add-record-form')?.addEventListener('submit', submitNewRecord);
+  document.querySelectorAll('[data-kb-select]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectKnowledgeRecord(button.dataset.kbType, Number(button.dataset.kbId));
+    });
+  });
+  document.querySelector('[data-kb-close]')?.addEventListener('click', () => {
+    state.kbSelectedRecord = null;
+    state.kbDetail = null;
+    state.kbDetailError = '';
+    state.kbDetailRequestId += 1;
+    render();
+  });
   document.querySelector('#btn-reset-sequential')?.addEventListener('click', () => {
     state.testHistory = [];
     state.completedTests = [];

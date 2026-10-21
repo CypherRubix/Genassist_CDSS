@@ -156,6 +156,70 @@ def get_condition_details(condition_id: int, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/knowledge/{resource}/{resource_id}/details")
+def get_knowledge_resource_details(resource: str, resource_id: int, db: Session = Depends(get_db)):
+    repository = KnowledgeRepository(db)
+    if resource == "symptoms":
+        item = repository.get_symptom(resource_id)
+        relations = [] if item is None else [
+            {"condition_id": rel.condition.condition_id, "condition_name": rel.condition.name, "weight": float(rel.weight)}
+            for rel in item.conditions
+        ]
+        details = {} if item is None else {"id": item.symptom_id, "name": item.name, "description": item.description}
+    elif resource == "risk-factors":
+        item = repository.get_risk_factor(resource_id)
+        relations = [] if item is None else [
+            {"condition_id": rel.condition.condition_id, "condition_name": rel.condition.name, "weight": float(rel.weight)}
+            for rel in item.conditions
+        ]
+        details = {} if item is None else {
+            "id": item.risk_factor_id,
+            "name": item.name,
+            "description": item.description,
+            "type": item.factor_type,
+        }
+    elif resource == "tests":
+        item = repository.get_test(resource_id)
+        relations = [] if item is None else [
+            {
+                "condition_id": rel.condition.condition_id,
+                "condition_name": rel.condition.name,
+                "priority": rel.priority,
+                "purpose": rel.purpose or item.purpose,
+            }
+            for rel in item.conditions
+        ]
+        details = {} if item is None else {
+            "id": item.test_id,
+            "name": item.name,
+            "description": item.description,
+            "purpose": item.purpose,
+        }
+    elif resource == "treatments":
+        item = repository.get_treatment(resource_id)
+        relations = [] if item is None else [
+            {
+                "condition_id": rel.condition.condition_id,
+                "condition_name": rel.condition.name,
+                "priority": rel.priority,
+                "notes": rel.notes,
+            }
+            for rel in item.conditions
+        ]
+        details = {} if item is None else {
+            "id": item.treatment_id,
+            "name": item.name,
+            "description": item.description,
+            "type": item.treatment_type,
+        }
+    else:
+        raise HTTPException(status_code=404, detail="knowledge resource not found")
+
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"{resource.rstrip('s')} not found")
+    return {**details, "related_conditions": relations}
+
+
 @app.get("/symptoms", response_model=list[ResourceResponse])
 def list_symptoms(db: Session = Depends(get_db)):
     return [
