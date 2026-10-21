@@ -8,6 +8,13 @@ const resourceConfig = {
   treatments: { label: 'Treatments', singular: 'treatment' },
 };
 
+const relationshipConfig = {
+  symptoms: { id: 'symptom_id', endpoint: 'symptoms', label: 'Symptoms', relation: 'symptoms', kind: 'weight' },
+  'risk-factors': { id: 'risk_factor_id', endpoint: 'risk-factors', label: 'Risk factors', relation: 'risk-factors', kind: 'weight' },
+  tests: { id: 'test_id', endpoint: 'tests', label: 'Tests', relation: 'tests', kind: 'priority' },
+  treatments: { id: 'treatment_id', endpoint: 'treatments', label: 'Treatments', relation: 'treatments', kind: 'priority' },
+};
+
 const state = {
   page: 'home',
   stats: null,
@@ -541,6 +548,27 @@ function addRecordsPage() {
         ${state.addType === 'tests' ? '<label>Purpose<textarea name="purpose" placeholder="What is this test used for?"></textarea></label>' : ''}
         ${state.addType === 'treatments' ? '<label>Treatment type<input name="treatment_type" required placeholder="e.g. medication"></label>' : ''}`;
 
+  const relationships = state.addType === 'conditions'
+    ? Object.entries(relationshipConfig).map(([type, relation]) => `
+        <section class="form-section">
+          <h3>${relation.label}</h3>
+          <p>Link existing ${relation.label.toLowerCase()} or add a new one. ${relation.kind === 'weight' ? 'Weights must be between 1 and 10.' : 'Priority must be between 1 and 10.'}</p>
+          <div class="add-relation-list" data-relation-list="${type}">
+            ${relationRowMarkup(type)}
+          </div>
+          <button class="pill outline small" type="button" data-add-relation="${type}">Add ${relation.label.toLowerCase()}</button>
+        </section>
+      `).join('')
+    : `
+        <section class="form-section">
+          <h3>Related conditions</h3>
+          <p>Link this ${escapeHtml(config.singular)} to existing conditions or add a new condition. ${state.addType === 'symptoms' || state.addType === 'risk-factors' ? 'Weights must be between 1 and 10.' : 'Priority must be between 1 and 10.'}</p>
+          <div class="add-relation-list" data-relation-list="conditions">
+            ${relationRowMarkup('conditions')}
+          </div>
+          <button class="pill outline small" type="button" data-add-relation="conditions">Add related condition</button>
+        </section>`;
+
   return `
     ${pageHead('Knowledge base', 'Add new records', 'Create new clinical entries that can be used in evaluations and shown in the knowledge base.')}
     <div class="kb-tabs">
@@ -552,6 +580,7 @@ function addRecordsPage() {
       ${state.addError ? `<div class="error">${escapeHtml(state.addError)}</div>` : ''}
       <form id="add-record-form" class="form-stack">
         ${fields}
+        ${relationships}
         <div class="form-actions">
           <button class="pill" type="submit" ${state.addLoading ? 'disabled' : ''}>${state.addLoading ? 'Saving...' : `Save ${config.singular}`}</button>
         </div>
@@ -560,26 +589,167 @@ function addRecordsPage() {
   `;
 }
 
+function relationRowMarkup(resource) {
+  const isCondition = resource === 'conditions';
+  const options = (state.data[resource] || []).map((item) => `
+    <option value="${item.id}">${escapeHtml(item.name)}</option>
+  `).join('');
+  const relationship = isCondition
+    ? {
+      endpoint: 'conditions',
+      id: 'id',
+      label: 'condition',
+      kind: state.addType === 'symptoms' || state.addType === 'risk-factors' ? 'weight' : 'priority',
+    }
+    : relationshipConfig[resource];
+  const singularLabel = isCondition ? 'condition' : resourceConfig[resource].singular;
+  const kindLabel = relationship.kind === 'weight' ? 'Weight' : 'Priority';
+
+  return `
+    <div class="add-relation-row" data-relation-row data-resource="${resource}" data-kind="${relationship.kind}">
+      <label>Existing ${escapeHtml(relationship.label)} or add new
+        <select name="related_id">
+          <option value="">Choose ${escapeHtml(relationship.label)}</option>
+          ${options}
+          <option value="__new__">+ Add a new ${escapeHtml(singularLabel)}</option>
+        </select>
+      </label>
+      <label class="relation-new-field" hidden>New ${escapeHtml(singularLabel)} name
+        <input name="related_name" placeholder="Enter a name">
+      </label>
+      ${isCondition ? `
+        <div class="relation-new-field field-grid" hidden>
+          <label>Severity (1-10)<input name="related_severity" type="number" min="1" max="10" value="5"></label>
+          <label>Urgency (1-10)<input name="related_urgency" type="number" min="1" max="10" value="5"></label>
+        </div>
+      ` : ''}
+      <label>${kindLabel} (1-10)
+        <input name="related_weight" type="number" min="1" max="10" step="1" value="5" required>
+      </label>
+      <button class="pill outline small" type="button" data-remove-relation aria-label="Remove relationship">Remove</button>
+    </div>
+  `;
+}
+
+function parseRelationshipRows(form) {
+  return [...form.querySelectorAll('[data-relation-row]')].map((row) => ({
+    resource: row.dataset.resource,
+    kind: row.dataset.kind,
+    id: row.querySelector('[name="related_id"]').value,
+    name: row.querySelector('[name="related_name"]').value.trim(),
+    severity: Number(row.querySelector('[name="related_severity"]')?.value || 5),
+    urgency: Number(row.querySelector('[name="related_urgency"]')?.value || 5),
+    weight: Number(row.querySelector('[name="related_weight"]').value),
+  })).filter((item) => item.id || item.name);
+}
+
+async function createLinkedResource(resource, name, severity = 5, urgency = 5) {
+  const payload = { name };
+  if (resource === 'conditions') {
+    Object.assign(payload, { severity, urgency });
+  } else if (resource === 'risk-factors') {
+    payload.factor_type = 'clinical';
+  } else if (resource === 'treatments') {
+    payload.treatment_type = 'general';
+  }
+  return api(`/${resource}`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
 async function submitNewRecord(event) {
   event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const payload = Object.fromEntries(formData.entries());
+  const relationships = parseRelationshipRows(form);
+  const addType = state.addType;
+
+  for (const relation of relationships) {
+    if (relation.kind === 'weight' && (relation.weight < 1 || relation.weight > 10 || !Number.isInteger(relation.weight))) {
+      state.addError = 'Relationship weights must be whole numbers between 1 and 10.';
+      render();
+      return;
+    }
+    if (relation.kind === 'priority' && (relation.weight < 1 || relation.weight > 10 || !Number.isInteger(relation.weight))) {
+      state.addError = 'Relationship priorities must be whole numbers between 1 and 10.';
+      render();
+      return;
+    }
+    if (relation.id === '__new__' && !relation.name) {
+      state.addError = 'Enter a name for each new related record.';
+      render();
+      return;
+    }
+  }
+
   state.addLoading = true;
   state.addError = '';
   render();
+  let primarySaved = false;
 
-  const formData = new FormData(event.currentTarget);
-  const payload = Object.fromEntries(formData.entries());
-  if (state.addType === 'conditions') {
+  if (addType === 'conditions') {
     payload.severity = Number(payload.severity);
     payload.urgency = Number(payload.urgency);
   }
 
   try {
-    await api(`/${state.addType}`, { method: 'POST', body: JSON.stringify(payload) });
-    state.data[state.addType] = await api(`/${state.addType}`);
+    if (addType === 'conditions') {
+      const linked = {};
+      for (const type of Object.keys(relationshipConfig)) {
+        linked[type] = [];
+      }
+
+      for (const relation of relationships) {
+        const id = relation.id === '__new__'
+          ? (await createLinkedResource(relation.resource, relation.name)).id
+          : Number(relation.id);
+        const rel = relationshipConfig[relation.resource];
+        linked[relation.resource].push(relation.kind === 'weight'
+          ? { [rel.id]: id, weight: relation.weight }
+          : { [rel.id]: id, priority: relation.weight });
+      }
+
+      const completePayload = {
+        condition: payload,
+        symptoms: linked.symptoms,
+        risk_factors: linked['risk-factors'],
+        tests: linked.tests,
+        treatments: linked.treatments,
+      };
+      await api('/conditions/complete', { method: 'POST', body: JSON.stringify(completePayload) });
+      primarySaved = true;
+    } else {
+      const created = await api(`/${addType}`, { method: 'POST', body: JSON.stringify(payload) });
+      primarySaved = true;
+      const conditionIds = [];
+      for (const relation of relationships) {
+        const conditionId = relation.id === '__new__'
+          ? (await createLinkedResource('conditions', relation.name, relation.severity, relation.urgency)).id
+          : Number(relation.id);
+        conditionIds.push({ id: conditionId, weight: relation.weight });
+      }
+
+      for (const relation of conditionIds) {
+        const linked = addType === 'symptoms'
+          ? { endpoint: `/conditions/${relation.id}/symptoms`, payload: { symptom_id: created.id, weight: relation.weight } }
+          : addType === 'risk-factors'
+            ? { endpoint: `/conditions/${relation.id}/risk-factors`, payload: { risk_factor_id: created.id, weight: relation.weight } }
+            : addType === 'tests'
+              ? { endpoint: `/conditions/${relation.id}/tests`, payload: { test_id: created.id, priority: relation.weight } }
+              : { endpoint: `/conditions/${relation.id}/treatments`, payload: { treatment_id: created.id, priority: relation.weight } };
+        await api(linked.endpoint, { method: 'POST', body: JSON.stringify(linked.payload) });
+      }
+    }
+    const resources = ['conditions', 'symptoms', 'risk-factors', 'tests', 'treatments'];
+    const records = await Promise.all(resources.map((resource) => api(`/${resource}`)));
+    resources.forEach((resource, index) => {
+      state.data[resource] = records[index];
+    });
     state.stats = await api('/stats');
-    toast(`${resourceConfig[state.addType].singular} saved successfully.`);
+    toast(`${resourceConfig[addType].singular} saved with related records.`);
   } catch (error) {
-    state.addError = error.message;
+    state.addError = primarySaved
+      ? `${error.message} The ${resourceConfig[addType].singular} was saved, but some relationships may not have been added.`
+      : error.message;
   } finally {
     state.addLoading = false;
     render();
@@ -755,6 +925,9 @@ function bindEvents() {
       if (page === 'overview') {
         loadStats();
       }
+      if (page === 'add' && !['conditions', 'symptoms', 'risk-factors', 'tests', 'treatments'].every((key) => state.data[key])) {
+        loadAddResources();
+      }
       if (page === 'evaluate') {
         if (!state.data.symptoms.length) {
           loadResource('symptoms');
@@ -797,6 +970,15 @@ function bindEvents() {
       render();
     };
   });
+
+  document.querySelectorAll('[data-add-relation]').forEach((button) => {
+    button.onclick = () => {
+      const list = document.querySelector(`[data-relation-list="${button.dataset.addRelation}"]`);
+      list?.insertAdjacentHTML('beforeend', relationRowMarkup(button.dataset.addRelation));
+      bindRelationshipEvents(list);
+    };
+  });
+  bindRelationshipEvents();
 
   bindAddButtons();
 
@@ -862,6 +1044,42 @@ function bindEvents() {
   });
 }
 
+function bindRelationshipEvents(root = document) {
+  root.querySelectorAll('[data-relation-row]').forEach((row) => {
+    const select = row.querySelector('[name="related_id"]');
+    select.onchange = () => {
+      const isNew = select.value === '__new__';
+      row.querySelectorAll('.relation-new-field').forEach((field) => {
+        field.hidden = !isNew;
+      });
+      const nameInput = row.querySelector('[name="related_name"]');
+      if (nameInput) {
+        nameInput.required = isNew;
+      }
+    };
+    row.querySelector('[data-remove-relation]').onclick = () => row.remove();
+  });
+}
+
+async function loadAddResources() {
+  state.addLoading = true;
+  state.addError = '';
+  render();
+  try {
+    const resources = ['conditions', 'symptoms', 'risk-factors', 'tests', 'treatments'];
+    const records = await Promise.all(resources.map((resource) => api(`/${resource}`)));
+    resources.forEach((resource, index) => {
+      state.data[resource] = records[index];
+    });
+    state.addError = '';
+  } catch (error) {
+    state.addError = error.message;
+  } finally {
+    state.addLoading = false;
+    render();
+  }
+}
+
 async function init() {
   try {
     state.data.symptoms = await api('/symptoms');
@@ -875,4 +1093,3 @@ async function init() {
 }
 
 init();
-

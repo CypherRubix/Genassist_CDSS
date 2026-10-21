@@ -256,6 +256,6 @@ The test suite uses an in-memory SQLite database and verifies condition creation
 4. **Save to Patient Records**: Click "Save to Patient Records" to persist clinical assessments to the database.
 5. **Patient Records History**: Browse and retrieve past patient evaluations, including demographics, symptoms, and top matched conditions.
 6. **Knowledge Base Explorer**: Browse and search all 5 clinical resource tables with full severity, urgency, and purpose attributes.
-7. **Add Records**: Add new Conditions, Symptoms, Risk Factors, Tests, and Treatments directly to the database via interactive modal dialogs.
+7. **Add Records**: Create Conditions, Symptoms, Risk Factors, Tests, and Treatments and link them to existing records from the Add Records page. Related symptoms and risk factors can also be created inline; relationship weights are 1–10. Diagnostic test and treatment links use priorities from 1–10.
 8. **Condition Relationship Linking**: Click "View Details & Links" on any condition to view and add linked symptoms (with weights), risk factors, diagnostic tests (with priorities), and treatments.
 9. **Sample Data Seeder**: Automatically seeds standard clinical conditions upon first run if empty, or on-demand via the "Load Sample Medical Knowledge" button.
